@@ -1,0 +1,26 @@
+sources:
+  superpowers:
+    repo: https://github.com/example/skills.git
+    ref: main
+    skills:
+      brainstorming:
+        path: skills/brainstorming
+      writing-plans:
+        path: skills/writing-plans
+      executing-plans:
+        path: skills/executing-plans
+
+profiles:
+  trae-workspace:
+    target: /cloudide/workspace/.trae/skills
+    skills:
+      - brainstorming
+      - writing-plans
+      - executing-plans
+
+  trae-project:
+    target: /cloudide/workspace/trade_crm_platform/.trae/skills
+    skills:
+      - brainstorming
+      - writing-plans
+
