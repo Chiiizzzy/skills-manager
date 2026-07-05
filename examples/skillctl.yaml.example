@@ -1,6 +1,7 @@
 sources:
   superpowers:
     repo: https://github.com/example/skills.git
+    # First version supports plain branch names only, such as main or feature/foo.
     ref: main
     skills:
       brainstorming:
@@ -10,6 +11,7 @@ sources:
 
 profiles:
   trae-workspace:
+    # Agent skills directory that receives dist/<skill> during sync.
     target: /cloudide/workspace/.trae/skills
     skills:
       - brainstorming

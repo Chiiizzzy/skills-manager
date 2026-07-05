@@ -1,8 +1,8 @@
 # Skills Manager
 
-Skills Manager 是一个用于管理 agent skills 的本地优先工具方案。它把开源 skills 的上游更新、个人定制 patch、合并产物和 agent 生效目录拆开管理，避免直接在 `.trae/skills` 等目录里修改导致来源不可追踪、更新不可审查。
+Skills Manager 是一个用于管理 agent skills 的本地优先 CLI。它把开源 skills 的上游更新、个人定制 patch、合并产物和 agent 生效目录拆开管理，避免直接在 `.trae/skills` 等目录里修改导致来源不可追踪、更新不可审查。
 
-当前仓库处于设计阶段，已包含设计方案、实施计划和配置样例；CLI 代码将在后续按实施计划落地。
+当前实现提供 `skillctl` Go CLI，覆盖配置解析、Git source 拉取、patch 刷新、doctor 校验、sync 和 rollback 的第一版本地流程。
 
 ## 目标
 
@@ -24,6 +24,7 @@ skills-manager/
   patches/                   # 本地定制 patch，按 skill 管理
   dist/                      # 合并后的可安装产物，由 CLI 生成
   backups/                   # sync 前备份，由 CLI 生成
+  bin/                       # 本地构建产物，由用户生成
   docs/
     specs/
       2026-07-01-skills-manager-design.md
@@ -31,22 +32,37 @@ skills-manager/
       2026-07-01-skills-manager-implementation-plan.md
 ```
 
-## 核心命令设计
+## Build
 
 ```bash
-skillctl status
-skillctl update --all
-skillctl diff brainstorming
-skillctl patch refresh brainstorming
-skillctl doctor
-skillctl sync --profile trae-workspace --dry-run
-skillctl sync --profile trae-workspace
-skillctl rollback --profile trae-workspace
+go build -o bin/skillctl ./cmd/skillctl
+```
+
+## Local Check
+
+```bash
+go test ./...
+bin/skillctl --root . status
+```
+
+如果当前仓库根目录还没有 `skillctl.yaml`，`status` 会报告配置文件缺失。可以先复制并编辑 `examples/skillctl.yaml.example`。
+
+## 核心命令
+
+```bash
+skillctl --root . status
+skillctl --root . update --all
+skillctl --root . diff brainstorming
+skillctl --root . patch refresh brainstorming
+skillctl --root . doctor
+skillctl --root . sync --profile trae-workspace --dry-run
+skillctl --root . sync --profile trae-workspace
+skillctl --root . rollback --profile trae-workspace
 ```
 
 ## 推荐工作流
 
-1. 将常用开源 skills 注册到 `skillctl.yaml`。
+1. 将常用开源 skills 注册到 `skillctl.yaml`。第一版 `source.ref` 只支持普通分支名，例如 `main` 或 `feature/foo`。
 2. 执行 `skillctl update --all` 拉取上游更新并重新生成 `dist/`。
 3. 如果出现冲突，在 `dist/<skill>` 中解决 conflict marker。
 4. 执行 `skillctl patch refresh <skill>` 将已解决的差异刷新回 `patches/`。
