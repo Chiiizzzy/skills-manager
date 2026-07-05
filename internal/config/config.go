@@ -161,17 +161,33 @@ func hasSurroundingWhitespace(value string) bool {
 }
 
 func validateSourceRef(sourceName, ref string) error {
-	if strings.HasPrefix(ref, "origin/") ||
+	if ref == "@" ||
+		strings.HasPrefix(ref, "/") ||
+		strings.HasPrefix(ref, ".") ||
+		strings.HasPrefix(ref, "origin/") ||
 		strings.HasPrefix(ref, "refs/") ||
 		versionTagRefRE.MatchString(ref) ||
 		isHexRef(ref) ||
 		strings.ContainsAny(ref, "~^:?*[\\") ||
+		strings.Contains(ref, "..") ||
+		strings.Contains(ref, "@{") ||
 		strings.Contains(ref, "//") ||
 		strings.HasSuffix(ref, "/") ||
+		strings.HasSuffix(ref, ".") ||
+		hasInvalidRefPathSegment(ref) ||
 		strings.IndexFunc(ref, unicode.IsSpace) >= 0 {
 		return fmt.Errorf("source %q ref %q must be a plain branch name", sourceName, ref)
 	}
 	return nil
+}
+
+func hasInvalidRefPathSegment(ref string) bool {
+	for _, segment := range strings.Split(ref, "/") {
+		if strings.HasPrefix(segment, ".") || strings.HasSuffix(segment, ".lock") {
+			return true
+		}
+	}
+	return false
 }
 
 func isHexRef(ref string) bool {
