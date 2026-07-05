@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"unicode"
 )
 
 type Runner struct{}
@@ -42,7 +43,7 @@ func (r Runner) CloneOrFetch(ctx context.Context, repo, ref, dir string) error {
 }
 
 func (r Runner) Resolve(ctx context.Context, dir, rev string) (string, error) {
-	if remoteRef, ok := remoteTrackingRef(rev); ok {
+	if _, remoteRef, ok := remoteBranchRef(rev); ok {
 		out, err := r.Run(ctx, dir, "rev-parse", remoteRef)
 		if err == nil {
 			return strings.TrimSpace(out), nil
@@ -56,8 +57,8 @@ func (r Runner) Resolve(ctx context.Context, dir, rev string) (string, error) {
 }
 
 func (r Runner) fetch(ctx context.Context, dir, ref string) error {
-	if remoteRef, ok := remoteTrackingRef(ref); ok {
-		if _, err := r.Run(ctx, dir, "fetch", "origin", fmt.Sprintf("+refs/heads/%s:%s", ref, remoteRef)); err == nil {
+	if branch, remoteRef, ok := remoteBranchRef(ref); ok {
+		if _, err := r.Run(ctx, dir, "fetch", "origin", fmt.Sprintf("+refs/heads/%s:%s", branch, remoteRef)); err == nil {
 			return nil
 		}
 	}
@@ -65,9 +66,40 @@ func (r Runner) fetch(ctx context.Context, dir, ref string) error {
 	return err
 }
 
-func remoteTrackingRef(ref string) (string, bool) {
-	if strings.HasPrefix(ref, "origin/") || strings.HasPrefix(ref, "refs/") {
-		return "", false
+func remoteBranchRef(ref string) (branch string, remoteRef string, ok bool) {
+	if ref == "" || strings.HasPrefix(ref, "refs/tags/") || isHexSHA(ref) {
+		return "", "", false
 	}
-	return "refs/remotes/origin/" + ref, true
+	if strings.ContainsAny(ref, "~^:") || strings.IndexFunc(ref, unicode.IsSpace) >= 0 {
+		return "", "", false
+	}
+
+	switch {
+	case strings.HasPrefix(ref, "refs/remotes/origin/"):
+		branch = strings.TrimPrefix(ref, "refs/remotes/origin/")
+	case strings.HasPrefix(ref, "refs/heads/"):
+		branch = strings.TrimPrefix(ref, "refs/heads/")
+	case strings.HasPrefix(ref, "origin/"):
+		branch = strings.TrimPrefix(ref, "origin/")
+	case strings.HasPrefix(ref, "refs/"):
+		return "", "", false
+	default:
+		branch = ref
+	}
+	if branch == "" {
+		return "", "", false
+	}
+	return branch, "refs/remotes/origin/" + branch, true
+}
+
+func isHexSHA(ref string) bool {
+	if len(ref) != 40 {
+		return false
+	}
+	for _, r := range ref {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
+			return false
+		}
+	}
+	return true
 }
