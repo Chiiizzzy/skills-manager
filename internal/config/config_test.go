@@ -42,6 +42,38 @@ profiles:
 	}
 }
 
+func TestLoadConfigInvalidConfigReturnsValidationError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "skillctl.yaml")
+	data := []byte(`
+sources:
+  superpowers:
+    repo: "   "
+    ref: main
+    skills:
+      brainstorming:
+        path: skills/brainstorming
+profiles:
+  trae-workspace:
+    target: /cloudide/workspace/.trae/skills
+    skills:
+      - brainstorming
+`)
+
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("LoadConfig() error = nil, want validation error")
+	}
+	for _, want := range []string{"source \"superpowers\"", "repo"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("LoadConfig() error = %q, want substring %q", err, want)
+		}
+	}
+}
+
 func TestConfigValidate(t *testing.T) {
 	validConfig := func() Config {
 		return Config{
@@ -86,10 +118,27 @@ func TestConfigValidate(t *testing.T) {
 			wantErrSubstrings: []string{"profiles must not be empty"},
 		},
 		{
+			name: "blank source name",
+			mutate: func(c *Config) {
+				c.Sources[" \t "] = c.Sources["superpowers"]
+				delete(c.Sources, "superpowers")
+			},
+			wantErrSubstrings: []string{"source \" \\t \"", "name"},
+		},
+		{
 			name: "missing source repo",
 			mutate: func(c *Config) {
 				source := c.Sources["superpowers"]
 				source.Repo = ""
+				c.Sources["superpowers"] = source
+			},
+			wantErrSubstrings: []string{"source \"superpowers\"", "repo"},
+		},
+		{
+			name: "blank source repo",
+			mutate: func(c *Config) {
+				source := c.Sources["superpowers"]
+				source.Repo = " \t\n"
 				c.Sources["superpowers"] = source
 			},
 			wantErrSubstrings: []string{"source \"superpowers\"", "repo"},
@@ -104,6 +153,15 @@ func TestConfigValidate(t *testing.T) {
 			wantErrSubstrings: []string{"source \"superpowers\"", "ref"},
 		},
 		{
+			name: "blank source ref",
+			mutate: func(c *Config) {
+				source := c.Sources["superpowers"]
+				source.Ref = " \t\n"
+				c.Sources["superpowers"] = source
+			},
+			wantErrSubstrings: []string{"source \"superpowers\"", "ref"},
+		},
+		{
 			name: "missing source skills",
 			mutate: func(c *Config) {
 				source := c.Sources["superpowers"]
@@ -113,9 +171,23 @@ func TestConfigValidate(t *testing.T) {
 			wantErrSubstrings: []string{"source \"superpowers\"", "skills"},
 		},
 		{
+			name: "blank skill name",
+			mutate: func(c *Config) {
+				c.Sources["superpowers"].Skills[" \t "] = Skill{Path: "skills/blank"}
+			},
+			wantErrSubstrings: []string{"source \"superpowers\"", "skill \" \\t \"", "name"},
+		},
+		{
 			name: "missing skill path",
 			mutate: func(c *Config) {
 				c.Sources["superpowers"].Skills["brainstorming"] = Skill{}
+			},
+			wantErrSubstrings: []string{"source \"superpowers\"", "skill \"brainstorming\"", "path"},
+		},
+		{
+			name: "blank skill path",
+			mutate: func(c *Config) {
+				c.Sources["superpowers"].Skills["brainstorming"] = Skill{Path: " \t\n"}
 			},
 			wantErrSubstrings: []string{"source \"superpowers\"", "skill \"brainstorming\"", "path"},
 		},
@@ -133,10 +205,58 @@ func TestConfigValidate(t *testing.T) {
 			wantErrSubstrings: []string{"source \"superpowers\"", "source \"local-overrides\"", "skill \"brainstorming\"", "duplicates"},
 		},
 		{
+			name: "duplicate skill name across sources after trim",
+			mutate: func(c *Config) {
+				c.Sources["local-overrides"] = Source{
+					Repo: "https://github.com/example/local-skills.git",
+					Ref:  "main",
+					Skills: map[string]Skill{
+						" brainstorming ": {Path: "skills/brainstorming"},
+					},
+				}
+			},
+			wantErrSubstrings: []string{"source \"superpowers\"", "source \"local-overrides\"", "skill", "duplicates"},
+		},
+		{
+			name: "profile references source skill after trim",
+			mutate: func(c *Config) {
+				source := c.Sources["superpowers"]
+				source.Skills = map[string]Skill{
+					" brainstorming ": {Path: "skills/brainstorming"},
+				}
+				c.Sources["superpowers"] = source
+			},
+		},
+		{
+			name: "profile references skill after trimming profile entry",
+			mutate: func(c *Config) {
+				profile := c.Profiles["trae-workspace"]
+				profile.Skills = []string{" brainstorming "}
+				c.Profiles["trae-workspace"] = profile
+			},
+		},
+		{
+			name: "blank profile name",
+			mutate: func(c *Config) {
+				c.Profiles[" \t "] = c.Profiles["trae-workspace"]
+				delete(c.Profiles, "trae-workspace")
+			},
+			wantErrSubstrings: []string{"profile \" \\t \"", "name"},
+		},
+		{
 			name: "missing profile target",
 			mutate: func(c *Config) {
 				profile := c.Profiles["trae-workspace"]
 				profile.Target = ""
+				c.Profiles["trae-workspace"] = profile
+			},
+			wantErrSubstrings: []string{"profile \"trae-workspace\"", "target"},
+		},
+		{
+			name: "blank profile target",
+			mutate: func(c *Config) {
+				profile := c.Profiles["trae-workspace"]
+				profile.Target = " \t\n"
 				c.Profiles["trae-workspace"] = profile
 			},
 			wantErrSubstrings: []string{"profile \"trae-workspace\"", "target"},
@@ -149,6 +269,15 @@ func TestConfigValidate(t *testing.T) {
 				c.Profiles["trae-workspace"] = profile
 			},
 			wantErrSubstrings: []string{"profile \"trae-workspace\"", "skills"},
+		},
+		{
+			name: "blank profile skill name",
+			mutate: func(c *Config) {
+				profile := c.Profiles["trae-workspace"]
+				profile.Skills = []string{" \t "}
+				c.Profiles["trae-workspace"] = profile
+			},
+			wantErrSubstrings: []string{"profile \"trae-workspace\"", "skill \" \\t \"", "name"},
 		},
 		{
 			name: "profile references unknown skill",
@@ -167,6 +296,15 @@ func TestConfigValidate(t *testing.T) {
 				c.Profiles["trae-workspace"] = profile
 			},
 			wantErrSubstrings: []string{"profile \"trae-workspace\"", "skill \"brainstorming\"", "duplicated"},
+		},
+		{
+			name: "duplicate skill in one profile after trim",
+			mutate: func(c *Config) {
+				profile := c.Profiles["trae-workspace"]
+				profile.Skills = []string{"brainstorming", " brainstorming "}
+				c.Profiles["trae-workspace"] = profile
+			},
+			wantErrSubstrings: []string{"profile \"trae-workspace\"", "skill \" brainstorming \"", "duplicated"},
 		},
 	}
 

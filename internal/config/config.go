@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -64,10 +65,13 @@ func (c *Config) Validate() error {
 
 	skillSources := make(map[string]string)
 	for name, source := range c.Sources {
-		if source.Repo == "" {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("source %q name must not be empty", name)
+		}
+		if strings.TrimSpace(source.Repo) == "" {
 			return fmt.Errorf("source %q repo must not be empty", name)
 		}
-		if source.Ref == "" {
+		if strings.TrimSpace(source.Ref) == "" {
 			return fmt.Errorf("source %q ref must not be empty", name)
 		}
 		if len(source.Skills) == 0 {
@@ -75,18 +79,25 @@ func (c *Config) Validate() error {
 		}
 
 		for skillName, skill := range source.Skills {
-			if skill.Path == "" {
+			trimmedSkillName := strings.TrimSpace(skillName)
+			if trimmedSkillName == "" {
+				return fmt.Errorf("source %q skill %q name must not be empty", name, skillName)
+			}
+			if strings.TrimSpace(skill.Path) == "" {
 				return fmt.Errorf("source %q skill %q path must not be empty", name, skillName)
 			}
-			if existingSource, ok := skillSources[skillName]; ok {
+			if existingSource, ok := skillSources[trimmedSkillName]; ok {
 				return fmt.Errorf("source %q skill %q duplicates skill from source %q", name, skillName, existingSource)
 			}
-			skillSources[skillName] = name
+			skillSources[trimmedSkillName] = name
 		}
 	}
 
 	for name, profile := range c.Profiles {
-		if profile.Target == "" {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("profile %q name must not be empty", name)
+		}
+		if strings.TrimSpace(profile.Target) == "" {
 			return fmt.Errorf("profile %q target must not be empty", name)
 		}
 		if len(profile.Skills) == 0 {
@@ -94,12 +105,16 @@ func (c *Config) Validate() error {
 		}
 		profileSkills := make(map[string]struct{})
 		for _, skillName := range profile.Skills {
-			if _, ok := profileSkills[skillName]; ok {
+			trimmedSkillName := strings.TrimSpace(skillName)
+			if trimmedSkillName == "" {
+				return fmt.Errorf("profile %q skill %q name must not be empty", name, skillName)
+			}
+			if _, ok := profileSkills[trimmedSkillName]; ok {
 				return fmt.Errorf("profile %q skill %q must not be duplicated", name, skillName)
 			}
-			profileSkills[skillName] = struct{}{}
+			profileSkills[trimmedSkillName] = struct{}{}
 
-			if _, ok := skillSources[skillName]; !ok {
+			if _, ok := skillSources[trimmedSkillName]; !ok {
 				return fmt.Errorf("profile %q references unknown skill %q", name, skillName)
 			}
 		}
