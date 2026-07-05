@@ -65,12 +65,20 @@ func (r Runner) fetch(ctx context.Context, dir, ref string) error {
 			return nil
 		}
 	}
+	if _, fullRef, ok := tagRef(ref); ok {
+		if _, err := r.Run(ctx, dir, "fetch", "origin", fmt.Sprintf("+%s:%s", fullRef, fullRef)); err == nil {
+			return nil
+		}
+	}
 	_, err := r.Run(ctx, dir, "fetch", "origin", ref)
 	return err
 }
 
 func remoteBranchRef(ref string) (branch string, remoteRef string, ok bool) {
-	if ref == "" || strings.HasPrefix(ref, "refs/tags/") || isHexSHA(ref) || bareVersionTagRefRE.MatchString(ref) {
+	if ref == "" || isHexSHA(ref) {
+		return "", "", false
+	}
+	if _, _, ok := tagRef(ref); ok {
 		return "", "", false
 	}
 	if strings.ContainsAny(ref, "~^:") || strings.IndexFunc(ref, unicode.IsSpace) >= 0 {
@@ -93,6 +101,23 @@ func remoteBranchRef(ref string) (branch string, remoteRef string, ok bool) {
 		return "", "", false
 	}
 	return branch, "refs/remotes/origin/" + branch, true
+}
+
+func tagRef(ref string) (tag string, fullRef string, ok bool) {
+	if ref == "" || isHexSHA(ref) || strings.ContainsAny(ref, "~^:") || strings.IndexFunc(ref, unicode.IsSpace) >= 0 {
+		return "", "", false
+	}
+	if strings.HasPrefix(ref, "refs/tags/") {
+		tag = strings.TrimPrefix(ref, "refs/tags/")
+		if tag == "" || strings.HasPrefix(tag, "/") {
+			return "", "", false
+		}
+		return tag, "refs/tags/" + tag, true
+	}
+	if bareVersionTagRefRE.MatchString(ref) {
+		return ref, "refs/tags/" + ref, true
+	}
+	return "", "", false
 }
 
 func isHexSHA(ref string) bool {

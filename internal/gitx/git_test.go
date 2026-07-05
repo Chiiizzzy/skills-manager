@@ -140,6 +140,80 @@ func TestRemoteBranchRef(t *testing.T) {
 	}
 }
 
+func TestTagRef(t *testing.T) {
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+
+	tests := []struct {
+		name     string
+		ref      string
+		wantTag  string
+		wantFull string
+		wantOK   bool
+	}{
+		{
+			name:     "full tag ref",
+			ref:      "refs/tags/v1.0.0",
+			wantTag:  "v1.0.0",
+			wantFull: "refs/tags/v1.0.0",
+			wantOK:   true,
+		},
+		{
+			name:     "full tag ref with slash",
+			ref:      "refs/tags/release/v1.0.0",
+			wantTag:  "release/v1.0.0",
+			wantFull: "refs/tags/release/v1.0.0",
+			wantOK:   true,
+		},
+		{
+			name:     "bare v version tag",
+			ref:      "v1.0.0",
+			wantTag:  "v1.0.0",
+			wantFull: "refs/tags/v1.0.0",
+			wantOK:   true,
+		},
+		{
+			name:     "bare version tag",
+			ref:      "1.0.0",
+			wantTag:  "1.0.0",
+			wantFull: "refs/tags/1.0.0",
+			wantOK:   true,
+		},
+		{
+			name:     "bare prerelease version tag",
+			ref:      "v1.0.0-rc.1",
+			wantTag:  "v1.0.0-rc.1",
+			wantFull: "refs/tags/v1.0.0-rc.1",
+			wantOK:   true,
+		},
+		{name: "bare branch", ref: "main"},
+		{name: "origin branch", ref: "origin/main"},
+		{name: "heads ref", ref: "refs/heads/main"},
+		{name: "remote tracking ref", ref: "refs/remotes/origin/main"},
+		{name: "sha", ref: sha},
+		{name: "tag expression", ref: "v1.0.0^{}"},
+		{name: "full tag expression", ref: "refs/tags/v1.0.0^{}"},
+		{name: "empty full tag ref", ref: "refs/tags/"},
+		{name: "double slash full tag ref", ref: "refs/tags//v1.0.0"},
+		{name: "whitespace", ref: "v1.0.0 test"},
+		{name: "empty"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tag, fullRef, ok := tagRef(tt.ref)
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if tag != tt.wantTag {
+				t.Fatalf("tag = %q, want %q", tag, tt.wantTag)
+			}
+			if fullRef != tt.wantFull {
+				t.Fatalf("fullRef = %q, want %q", fullRef, tt.wantFull)
+			}
+		})
+	}
+}
+
 func TestCloneOrFetchResolvesRemoteBranchAliases(t *testing.T) {
 	requireGit(t)
 
@@ -179,6 +253,47 @@ func TestCloneOrFetchResolvesRemoteBranchAliases(t *testing.T) {
 		}
 		if resolved == firstCommit {
 			t.Fatalf("%s: resolved stale first commit after fetch: %s", ref, resolved)
+		}
+	}
+}
+
+func TestCloneOrFetchResolvesTags(t *testing.T) {
+	requireGit(t)
+
+	ctx := context.Background()
+	runner := Runner{}
+	tmp := t.TempDir()
+	remoteDir, workDir := initRemoteRepo(t, runner, ctx, tmp)
+	tagCommit := commitAndPushMain(t, runner, ctx, workDir, "tagged\n", "tagged commit")
+	refs := []string{
+		"v1.0.0",
+		"refs/tags/v1.0.0",
+	}
+	sourceDirs := make([]string, len(refs))
+
+	for i := range refs {
+		sourceDir := filepath.Join(tmp, "sources", fmt.Sprintf("repo-%d", i))
+		if err := runner.CloneOrFetch(ctx, remoteDir, "main", sourceDir); err != nil {
+			t.Fatalf("pre-tag clone: %v", err)
+		}
+		sourceDirs[i] = sourceDir
+	}
+
+	runGit(t, runner, ctx, workDir, "tag", "v1.0.0", tagCommit)
+	runGit(t, runner, ctx, workDir, "push", "origin", "refs/tags/v1.0.0")
+
+	for i, ref := range refs {
+		sourceDir := sourceDirs[i]
+		if err := runner.CloneOrFetch(ctx, remoteDir, ref, sourceDir); err != nil {
+			t.Fatalf("%s: clone/fetch tag: %v", ref, err)
+		}
+		resolved := resolveGit(t, runner, ctx, sourceDir, ref)
+		if resolved != tagCommit {
+			t.Fatalf("%s: resolved tag = %s, want %s", ref, resolved, tagCommit)
+		}
+		localTag := gitOutput(t, runner, ctx, sourceDir, "rev-parse", "refs/tags/v1.0.0")
+		if localTag != tagCommit {
+			t.Fatalf("%s: local tag ref = %s, want %s", ref, localTag, tagCommit)
 		}
 	}
 }
