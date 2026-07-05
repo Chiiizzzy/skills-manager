@@ -68,6 +68,106 @@ func TestCloneOrFetchRefreshesRemoteBranch(t *testing.T) {
 	}
 }
 
+func TestCloneOrFetchClonesExistingChildDirInsideParentRepo(t *testing.T) {
+	requireGit(t)
+
+	ctx := context.Background()
+	runner := Runner{}
+	tmp := t.TempDir()
+	remoteDir, workDir := initRemoteRepo(t, runner, ctx, tmp)
+	commit := commitAndPushMain(t, runner, ctx, workDir, "first\n", "first commit")
+
+	parentDir := filepath.Join(tmp, "parent")
+	sourceDir := filepath.Join(parentDir, "sources", "repo")
+	runGit(t, runner, ctx, "", "init", parentDir)
+	runGit(t, runner, ctx, parentDir, "remote", "add", "origin", remoteDir)
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runner.CloneOrFetch(ctx, remoteDir, "main", sourceDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(sourceDir, ".git")); err != nil {
+		t.Fatalf("target directory was not cloned as its own repo: %v", err)
+	}
+	resolved := resolveGit(t, runner, ctx, sourceDir, "main")
+	if resolved != commit {
+		t.Fatalf("resolved commit = %s, want %s", resolved, commit)
+	}
+}
+
+func TestCloneOrFetchBranchRefDoesNotFallbackToTag(t *testing.T) {
+	requireGit(t)
+
+	ctx := context.Background()
+	runner := Runner{}
+	tmp := t.TempDir()
+	remoteDir, workDir := initRemoteRepo(t, runner, ctx, tmp)
+	sourceDir := filepath.Join(tmp, "source")
+
+	writeFile(t, filepath.Join(workDir, "README.md"), "tagged\n")
+	runGit(t, runner, ctx, workDir, "add", "README.md")
+	runGit(t, runner, ctx, workDir, "commit", "-m", "tagged commit")
+	tagCommit := gitOutput(t, runner, ctx, workDir, "rev-parse", "HEAD")
+	runGit(t, runner, ctx, workDir, "tag", "main", tagCommit)
+	runGit(t, runner, ctx, workDir, "push", "origin", "refs/tags/main")
+	if heads := gitOutput(t, runner, ctx, "", "ls-remote", "--heads", remoteDir, "main"); heads != "" {
+		t.Fatalf("remote unexpectedly has branch main: %s", heads)
+	}
+
+	runGit(t, runner, ctx, "", "init", sourceDir)
+	runGit(t, runner, ctx, sourceDir, "remote", "add", "origin", remoteDir)
+	if err := runner.CloneOrFetch(ctx, remoteDir, "main", sourceDir); err == nil {
+		t.Fatal("CloneOrFetch succeeded by falling back from branch main to tag main")
+	}
+	if _, err := runner.Run(ctx, sourceDir, "rev-parse", "refs/tags/main"); err == nil {
+		t.Fatal("tag main was fetched despite branch main fetch failure")
+	}
+}
+
+func TestResolveBranchRefDoesNotFallbackToTag(t *testing.T) {
+	requireGit(t)
+
+	ctx := context.Background()
+	runner := Runner{}
+	tmp := t.TempDir()
+	repoDir := filepath.Join(tmp, "repo")
+
+	runGit(t, runner, ctx, "", "init", repoDir)
+	runGit(t, runner, ctx, repoDir, "config", "user.name", "Test User")
+	runGit(t, runner, ctx, repoDir, "config", "user.email", "test@example.com")
+	writeFile(t, filepath.Join(repoDir, "README.md"), "tagged\n")
+	runGit(t, runner, ctx, repoDir, "add", "README.md")
+	runGit(t, runner, ctx, repoDir, "commit", "-m", "tagged commit")
+	runGit(t, runner, ctx, repoDir, "tag", "main", "HEAD")
+
+	if resolved, err := runner.Resolve(ctx, repoDir, "main"); err == nil {
+		t.Fatalf("Resolve fell back from remote branch main to tag main: %s", resolved)
+	}
+}
+
+func TestResolveTagRefDoesNotFallbackToBranch(t *testing.T) {
+	requireGit(t)
+
+	ctx := context.Background()
+	runner := Runner{}
+	tmp := t.TempDir()
+	repoDir := filepath.Join(tmp, "repo")
+
+	runGit(t, runner, ctx, "", "init", repoDir)
+	runGit(t, runner, ctx, repoDir, "config", "user.name", "Test User")
+	runGit(t, runner, ctx, repoDir, "config", "user.email", "test@example.com")
+	writeFile(t, filepath.Join(repoDir, "README.md"), "branch\n")
+	runGit(t, runner, ctx, repoDir, "add", "README.md")
+	runGit(t, runner, ctx, repoDir, "commit", "-m", "branch commit")
+	runGit(t, runner, ctx, repoDir, "branch", "v1.0.0", "HEAD")
+
+	if resolved, err := runner.Resolve(ctx, repoDir, "v1.0.0"); err == nil {
+		t.Fatalf("Resolve fell back from tag v1.0.0 to branch v1.0.0: %s", resolved)
+	}
+}
+
 func TestRemoteBranchRef(t *testing.T) {
 	const sha = "0123456789abcdef0123456789abcdef01234567"
 
@@ -265,9 +365,13 @@ func TestCloneOrFetchResolvesTags(t *testing.T) {
 	tmp := t.TempDir()
 	remoteDir, workDir := initRemoteRepo(t, runner, ctx, tmp)
 	tagCommit := commitAndPushMain(t, runner, ctx, workDir, "tagged\n", "tagged commit")
-	refs := []string{
-		"v1.0.0",
-		"refs/tags/v1.0.0",
+	refs := []struct {
+		ref     string
+		fullRef string
+	}{
+		{ref: "v1.0.0", fullRef: "refs/tags/v1.0.0"},
+		{ref: "refs/tags/v1.0.0", fullRef: "refs/tags/v1.0.0"},
+		{ref: "1.0.0", fullRef: "refs/tags/1.0.0"},
 	}
 	sourceDirs := make([]string, len(refs))
 
@@ -280,20 +384,21 @@ func TestCloneOrFetchResolvesTags(t *testing.T) {
 	}
 
 	runGit(t, runner, ctx, workDir, "tag", "v1.0.0", tagCommit)
-	runGit(t, runner, ctx, workDir, "push", "origin", "refs/tags/v1.0.0")
+	runGit(t, runner, ctx, workDir, "tag", "1.0.0", tagCommit)
+	runGit(t, runner, ctx, workDir, "push", "origin", "refs/tags/v1.0.0", "refs/tags/1.0.0")
 
-	for i, ref := range refs {
+	for i, tt := range refs {
 		sourceDir := sourceDirs[i]
-		if err := runner.CloneOrFetch(ctx, remoteDir, ref, sourceDir); err != nil {
-			t.Fatalf("%s: clone/fetch tag: %v", ref, err)
+		if err := runner.CloneOrFetch(ctx, remoteDir, tt.ref, sourceDir); err != nil {
+			t.Fatalf("%s: clone/fetch tag: %v", tt.ref, err)
 		}
-		resolved := resolveGit(t, runner, ctx, sourceDir, ref)
+		resolved := resolveGit(t, runner, ctx, sourceDir, tt.ref)
 		if resolved != tagCommit {
-			t.Fatalf("%s: resolved tag = %s, want %s", ref, resolved, tagCommit)
+			t.Fatalf("%s: resolved tag = %s, want %s", tt.ref, resolved, tagCommit)
 		}
-		localTag := gitOutput(t, runner, ctx, sourceDir, "rev-parse", "refs/tags/v1.0.0")
+		localTag := gitOutput(t, runner, ctx, sourceDir, "rev-parse", tt.fullRef)
 		if localTag != tagCommit {
-			t.Fatalf("%s: local tag ref = %s, want %s", ref, localTag, tagCommit)
+			t.Fatalf("%s: local tag ref = %s, want %s", tt.ref, localTag, tagCommit)
 		}
 	}
 }

@@ -32,7 +32,9 @@ func (Runner) Run(ctx context.Context, dir string, args ...string) (string, erro
 }
 
 func (r Runner) CloneOrFetch(ctx context.Context, repo, ref, dir string) error {
-	if _, err := r.Run(ctx, dir, "rev-parse", "--git-dir"); err == nil {
+	if ok, err := r.isRepoRoot(ctx, dir); err != nil {
+		return err
+	} else if ok {
 		return r.fetch(ctx, dir, ref)
 	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
@@ -45,12 +47,36 @@ func (r Runner) CloneOrFetch(ctx context.Context, repo, ref, dir string) error {
 	return r.fetch(ctx, dir, ref)
 }
 
+func (r Runner) isRepoRoot(ctx context.Context, dir string) (bool, error) {
+	out, err := r.Run(ctx, dir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return false, nil
+	}
+	topLevel, err := filepath.Abs(strings.TrimSpace(out))
+	if err != nil {
+		return false, err
+	}
+	target, err := filepath.Abs(dir)
+	if err != nil {
+		return false, err
+	}
+	return filepath.Clean(topLevel) == filepath.Clean(target), nil
+}
+
 func (r Runner) Resolve(ctx context.Context, dir, rev string) (string, error) {
 	if _, remoteRef, ok := remoteBranchRef(rev); ok {
 		out, err := r.Run(ctx, dir, "rev-parse", remoteRef)
-		if err == nil {
-			return strings.TrimSpace(out), nil
+		if err != nil {
+			return "", err
 		}
+		return strings.TrimSpace(out), nil
+	}
+	if _, fullRef, ok := tagRef(rev); ok {
+		out, err := r.Run(ctx, dir, "rev-parse", fullRef)
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(out), nil
 	}
 	out, err := r.Run(ctx, dir, "rev-parse", rev)
 	if err != nil {
@@ -61,14 +87,12 @@ func (r Runner) Resolve(ctx context.Context, dir, rev string) (string, error) {
 
 func (r Runner) fetch(ctx context.Context, dir, ref string) error {
 	if branch, remoteRef, ok := remoteBranchRef(ref); ok {
-		if _, err := r.Run(ctx, dir, "fetch", "origin", fmt.Sprintf("+refs/heads/%s:%s", branch, remoteRef)); err == nil {
-			return nil
-		}
+		_, err := r.Run(ctx, dir, "fetch", "origin", fmt.Sprintf("+refs/heads/%s:%s", branch, remoteRef))
+		return err
 	}
 	if _, fullRef, ok := tagRef(ref); ok {
-		if _, err := r.Run(ctx, dir, "fetch", "origin", fmt.Sprintf("+%s:%s", fullRef, fullRef)); err == nil {
-			return nil
-		}
+		_, err := r.Run(ctx, dir, "fetch", "origin", fmt.Sprintf("+%s:%s", fullRef, fullRef))
+		return err
 	}
 	_, err := r.Run(ctx, dir, "fetch", "origin", ref)
 	return err
