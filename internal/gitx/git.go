@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -27,21 +29,45 @@ func (Runner) Run(ctx context.Context, dir string, args ...string) (string, erro
 
 func (r Runner) CloneOrFetch(ctx context.Context, repo, ref, dir string) error {
 	if _, err := r.Run(ctx, dir, "rev-parse", "--git-dir"); err == nil {
-		_, err = r.Run(ctx, dir, "fetch", "origin", ref)
+		return r.fetch(ctx, dir, ref)
+	}
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return err
 	}
 	_, err := r.Run(ctx, "", "clone", "--no-checkout", repo, dir)
 	if err != nil {
 		return err
 	}
-	_, err = r.Run(ctx, dir, "fetch", "origin", ref)
-	return err
+	return r.fetch(ctx, dir, ref)
 }
 
 func (r Runner) Resolve(ctx context.Context, dir, rev string) (string, error) {
+	if remoteRef, ok := remoteTrackingRef(rev); ok {
+		out, err := r.Run(ctx, dir, "rev-parse", remoteRef)
+		if err == nil {
+			return strings.TrimSpace(out), nil
+		}
+	}
 	out, err := r.Run(ctx, dir, "rev-parse", rev)
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(out), nil
+}
+
+func (r Runner) fetch(ctx context.Context, dir, ref string) error {
+	if remoteRef, ok := remoteTrackingRef(ref); ok {
+		if _, err := r.Run(ctx, dir, "fetch", "origin", fmt.Sprintf("+refs/heads/%s:%s", ref, remoteRef)); err == nil {
+			return nil
+		}
+	}
+	_, err := r.Run(ctx, dir, "fetch", "origin", ref)
+	return err
+}
+
+func remoteTrackingRef(ref string) (string, bool) {
+	if strings.HasPrefix(ref, "origin/") || strings.HasPrefix(ref, "refs/") {
+		return "", false
+	}
+	return "refs/remotes/origin/" + ref, true
 }
