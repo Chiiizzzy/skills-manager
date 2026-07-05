@@ -3,10 +3,14 @@ package config
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
+	"unicode"
 
 	"gopkg.in/yaml.v3"
 )
+
+var versionTagRefRE = regexp.MustCompile(`^v?[0-9]+[.][0-9]+[.][0-9]+([-+][0-9A-Za-z][0-9A-Za-z.-]*)?$`)
 
 type Config struct {
 	Sources  map[string]Source  `yaml:"sources"`
@@ -83,6 +87,9 @@ func (c *Config) Validate() error {
 		if hasSurroundingWhitespace(source.Ref) {
 			return fmt.Errorf("source %q ref %q must not have leading or trailing whitespace", name, source.Ref)
 		}
+		if err := validateSourceRef(name, source.Ref); err != nil {
+			return err
+		}
 		if len(source.Skills) == 0 {
 			return fmt.Errorf("source %q skills must not be empty", name)
 		}
@@ -151,4 +158,30 @@ func isBlank(value string) bool {
 
 func hasSurroundingWhitespace(value string) bool {
 	return strings.TrimSpace(value) != value
+}
+
+func validateSourceRef(sourceName, ref string) error {
+	if strings.HasPrefix(ref, "origin/") ||
+		strings.HasPrefix(ref, "refs/") ||
+		versionTagRefRE.MatchString(ref) ||
+		isHexRef(ref) ||
+		strings.ContainsAny(ref, "~^:?*[\\") ||
+		strings.Contains(ref, "//") ||
+		strings.HasSuffix(ref, "/") ||
+		strings.IndexFunc(ref, unicode.IsSpace) >= 0 {
+		return fmt.Errorf("source %q ref %q must be a plain branch name", sourceName, ref)
+	}
+	return nil
+}
+
+func isHexRef(ref string) bool {
+	if len(ref) < 7 || len(ref) > 40 {
+		return false
+	}
+	for _, r := range ref {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
+			return false
+		}
+	}
+	return true
 }

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,6 +72,77 @@ profiles:
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("LoadConfig() error = %q, want substring %q", err, want)
 		}
+	}
+}
+
+func TestConfigValidateSourceRefBranches(t *testing.T) {
+	configWithRef := func(ref string) Config {
+		return Config{
+			Sources: map[string]Source{
+				"superpowers": {
+					Repo: "https://github.com/example/skills.git",
+					Ref:  ref,
+					Skills: map[string]Skill{
+						"brainstorming": {Path: "skills/brainstorming"},
+					},
+				},
+			},
+			Profiles: map[string]Profile{
+				"trae-workspace": {
+					Target: "/cloudide/workspace/.trae/skills",
+					Skills: []string{"brainstorming"},
+				},
+			},
+		}
+	}
+
+	for _, ref := range []string{"main", "develop", "feature/foo", "release/2026-07-05"} {
+		t.Run("allows "+ref, func(t *testing.T) {
+			cfg := configWithRef(ref)
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("Validate() error = %v, want nil", err)
+			}
+		})
+	}
+
+	rejected := []string{
+		"",
+		" \t\n",
+		" main ",
+		"origin/main",
+		"refs/heads/main",
+		"refs/remotes/origin/main",
+		"refs/tags/v1.0.0",
+		"v1.0.0",
+		"1.0.0",
+		"v1.0.0-rc.1",
+		"0123456789abcdef0123456789abcdef01234567",
+		"0123456",
+		"main~1",
+		"main^",
+		"feature:foo",
+		"feature?foo",
+		"feature*foo",
+		"feature[foo",
+		"feature\\foo",
+		"feature/foo/",
+		"feature//foo",
+		"feature foo",
+	}
+
+	for _, ref := range rejected {
+		t.Run("rejects "+ref, func(t *testing.T) {
+			cfg := configWithRef(ref)
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatal("Validate() error = nil, want error")
+			}
+			for _, want := range []string{"source \"superpowers\"", fmt.Sprintf("ref %q", ref)} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("Validate() error = %q, want substring %q", err, want)
+				}
+			}
+		})
 	}
 }
 
