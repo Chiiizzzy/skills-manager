@@ -14,15 +14,28 @@ type Issue struct {
 
 func CheckSkillDir(skillDir string) []Issue {
 	skillFile := filepath.Join(skillDir, "SKILL.md")
-	if _, err := os.Stat(skillFile); os.IsNotExist(err) {
+	skillInfo, err := os.Lstat(skillFile)
+	if os.IsNotExist(err) {
 		return []Issue{{
 			Path:    skillFile,
 			Message: "SKILL.md is missing",
 		}}
 	}
+	if err != nil {
+		return []Issue{{
+			Path:    skillFile,
+			Message: err.Error(),
+		}}
+	}
+	if !skillInfo.Mode().IsRegular() {
+		return []Issue{{
+			Path:    skillFile,
+			Message: "SKILL.md is not a regular file",
+		}}
+	}
 
 	var issues []Issue
-	err := filepath.WalkDir(skillDir, func(path string, entry os.DirEntry, err error) error {
+	err = filepath.WalkDir(skillDir, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			issues = append(issues, Issue{
 				Path:    path,
@@ -73,7 +86,11 @@ func FormatIssues(issues []Issue) string {
 }
 
 func hasConflictMarker(data string) bool {
-	return strings.Contains(data, "<<<<<<<") ||
-		strings.Contains(data, "=======") ||
-		strings.Contains(data, ">>>>>>>")
+	for _, rawLine := range strings.Split(data, "\n") {
+		line := strings.TrimSuffix(rawLine, "\r")
+		if strings.HasPrefix(line, "<<<<<<<") || strings.HasPrefix(line, ">>>>>>>") {
+			return true
+		}
+	}
+	return false
 }
