@@ -121,6 +121,8 @@ func TestConfigValidateSourceRefBranches(t *testing.T) {
 		"0123456789abcdef0123456789abcdef01234567",
 		"0123456",
 		"@",
+		"HEAD",
+		"-foo",
 		"main~1",
 		"main^",
 		"feature:foo",
@@ -137,6 +139,8 @@ func TestConfigValidateSourceRefBranches(t *testing.T) {
 		"feature/foo/",
 		"feature//foo",
 		"feature foo",
+		"foo\x00bar",
+		"foo\x1fbar",
 	}
 
 	for _, ref := range rejected {

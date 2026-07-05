@@ -162,6 +162,8 @@ func hasSurroundingWhitespace(value string) bool {
 
 func validateSourceRef(sourceName, ref string) error {
 	if ref == "@" ||
+		ref == "HEAD" ||
+		strings.HasPrefix(ref, "-") ||
 		strings.HasPrefix(ref, "/") ||
 		strings.HasPrefix(ref, ".") ||
 		strings.HasPrefix(ref, "origin/") ||
@@ -175,6 +177,7 @@ func validateSourceRef(sourceName, ref string) error {
 		strings.HasSuffix(ref, "/") ||
 		strings.HasSuffix(ref, ".") ||
 		hasInvalidRefPathSegment(ref) ||
+		strings.IndexFunc(ref, unicode.IsControl) >= 0 ||
 		strings.IndexFunc(ref, unicode.IsSpace) >= 0 {
 		return fmt.Errorf("source %q ref %q must be a plain branch name", sourceName, ref)
 	}
