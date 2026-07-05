@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -63,14 +64,26 @@ func TestConfigValidate(t *testing.T) {
 	}
 
 	tests := []struct {
-		name   string
-		mutate func(*Config)
+		name              string
+		mutate            func(*Config)
+		wantErrSubstrings []string
 	}{
+		{
+			name: "valid config",
+		},
 		{
 			name: "missing sources",
 			mutate: func(c *Config) {
 				c.Sources = nil
 			},
+			wantErrSubstrings: []string{"sources must not be empty"},
+		},
+		{
+			name: "missing profiles",
+			mutate: func(c *Config) {
+				c.Profiles = nil
+			},
+			wantErrSubstrings: []string{"profiles must not be empty"},
 		},
 		{
 			name: "missing source repo",
@@ -79,6 +92,7 @@ func TestConfigValidate(t *testing.T) {
 				source.Repo = ""
 				c.Sources["superpowers"] = source
 			},
+			wantErrSubstrings: []string{"source \"superpowers\"", "repo"},
 		},
 		{
 			name: "missing source ref",
@@ -87,6 +101,7 @@ func TestConfigValidate(t *testing.T) {
 				source.Ref = ""
 				c.Sources["superpowers"] = source
 			},
+			wantErrSubstrings: []string{"source \"superpowers\"", "ref"},
 		},
 		{
 			name: "missing source skills",
@@ -95,12 +110,27 @@ func TestConfigValidate(t *testing.T) {
 				source.Skills = nil
 				c.Sources["superpowers"] = source
 			},
+			wantErrSubstrings: []string{"source \"superpowers\"", "skills"},
 		},
 		{
 			name: "missing skill path",
 			mutate: func(c *Config) {
 				c.Sources["superpowers"].Skills["brainstorming"] = Skill{}
 			},
+			wantErrSubstrings: []string{"source \"superpowers\"", "skill \"brainstorming\"", "path"},
+		},
+		{
+			name: "duplicate skill name across sources",
+			mutate: func(c *Config) {
+				c.Sources["local-overrides"] = Source{
+					Repo: "https://github.com/example/local-skills.git",
+					Ref:  "main",
+					Skills: map[string]Skill{
+						"brainstorming": {Path: "skills/brainstorming"},
+					},
+				}
+			},
+			wantErrSubstrings: []string{"source \"superpowers\"", "source \"local-overrides\"", "skill \"brainstorming\"", "duplicates"},
 		},
 		{
 			name: "missing profile target",
@@ -109,6 +139,7 @@ func TestConfigValidate(t *testing.T) {
 				profile.Target = ""
 				c.Profiles["trae-workspace"] = profile
 			},
+			wantErrSubstrings: []string{"profile \"trae-workspace\"", "target"},
 		},
 		{
 			name: "missing profile skills",
@@ -117,16 +148,49 @@ func TestConfigValidate(t *testing.T) {
 				profile.Skills = nil
 				c.Profiles["trae-workspace"] = profile
 			},
+			wantErrSubstrings: []string{"profile \"trae-workspace\"", "skills"},
+		},
+		{
+			name: "profile references unknown skill",
+			mutate: func(c *Config) {
+				profile := c.Profiles["trae-workspace"]
+				profile.Skills = []string{"unknown-skill"}
+				c.Profiles["trae-workspace"] = profile
+			},
+			wantErrSubstrings: []string{"profile \"trae-workspace\"", "unknown skill \"unknown-skill\""},
+		},
+		{
+			name: "duplicate skill in one profile",
+			mutate: func(c *Config) {
+				profile := c.Profiles["trae-workspace"]
+				profile.Skills = []string{"brainstorming", "brainstorming"}
+				c.Profiles["trae-workspace"] = profile
+			},
+			wantErrSubstrings: []string{"profile \"trae-workspace\"", "skill \"brainstorming\"", "duplicated"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			tt.mutate(&cfg)
+			if tt.mutate != nil {
+				tt.mutate(&cfg)
+			}
 
-			if err := cfg.Validate(); err == nil {
+			err := cfg.Validate()
+			if len(tt.wantErrSubstrings) == 0 {
+				if err != nil {
+					t.Fatalf("Validate() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil {
 				t.Fatal("Validate() error = nil, want error")
+			}
+			for _, want := range tt.wantErrSubstrings {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("Validate() error = %q, want substring %q", err, want)
+				}
 			}
 		})
 	}

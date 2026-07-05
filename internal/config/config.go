@@ -58,7 +58,11 @@ func (c *Config) Validate() error {
 	if len(c.Sources) == 0 {
 		return fmt.Errorf("sources must not be empty")
 	}
+	if len(c.Profiles) == 0 {
+		return fmt.Errorf("profiles must not be empty")
+	}
 
+	skillSources := make(map[string]string)
 	for name, source := range c.Sources {
 		if source.Repo == "" {
 			return fmt.Errorf("source %q repo must not be empty", name)
@@ -74,6 +78,10 @@ func (c *Config) Validate() error {
 			if skill.Path == "" {
 				return fmt.Errorf("source %q skill %q path must not be empty", name, skillName)
 			}
+			if existingSource, ok := skillSources[skillName]; ok {
+				return fmt.Errorf("source %q skill %q duplicates skill from source %q", name, skillName, existingSource)
+			}
+			skillSources[skillName] = name
 		}
 	}
 
@@ -83,6 +91,17 @@ func (c *Config) Validate() error {
 		}
 		if len(profile.Skills) == 0 {
 			return fmt.Errorf("profile %q skills must not be empty", name)
+		}
+		profileSkills := make(map[string]struct{})
+		for _, skillName := range profile.Skills {
+			if _, ok := profileSkills[skillName]; ok {
+				return fmt.Errorf("profile %q skill %q must not be duplicated", name, skillName)
+			}
+			profileSkills[skillName] = struct{}{}
+
+			if _, ok := skillSources[skillName]; !ok {
+				return fmt.Errorf("profile %q references unknown skill %q", name, skillName)
+			}
 		}
 	}
 
