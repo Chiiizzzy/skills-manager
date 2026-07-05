@@ -126,6 +126,14 @@ func TestConfigValidate(t *testing.T) {
 			wantErrSubstrings: []string{"source \" \\t \"", "name"},
 		},
 		{
+			name: "source name with surrounding whitespace",
+			mutate: func(c *Config) {
+				c.Sources[" superpowers "] = c.Sources["superpowers"]
+				delete(c.Sources, "superpowers")
+			},
+			wantErrSubstrings: []string{"source \" superpowers \"", "name", "whitespace"},
+		},
+		{
 			name: "missing source repo",
 			mutate: func(c *Config) {
 				source := c.Sources["superpowers"]
@@ -142,6 +150,15 @@ func TestConfigValidate(t *testing.T) {
 				c.Sources["superpowers"] = source
 			},
 			wantErrSubstrings: []string{"source \"superpowers\"", "repo"},
+		},
+		{
+			name: "source repo with surrounding whitespace",
+			mutate: func(c *Config) {
+				source := c.Sources["superpowers"]
+				source.Repo = " https://github.com/example/skills.git "
+				c.Sources["superpowers"] = source
+			},
+			wantErrSubstrings: []string{"source \"superpowers\"", "repo \" https://github.com/example/skills.git \"", "whitespace"},
 		},
 		{
 			name: "missing source ref",
@@ -162,6 +179,15 @@ func TestConfigValidate(t *testing.T) {
 			wantErrSubstrings: []string{"source \"superpowers\"", "ref"},
 		},
 		{
+			name: "source ref with surrounding whitespace",
+			mutate: func(c *Config) {
+				source := c.Sources["superpowers"]
+				source.Ref = " main "
+				c.Sources["superpowers"] = source
+			},
+			wantErrSubstrings: []string{"source \"superpowers\"", "ref \" main \"", "whitespace"},
+		},
+		{
 			name: "missing source skills",
 			mutate: func(c *Config) {
 				source := c.Sources["superpowers"]
@@ -178,6 +204,16 @@ func TestConfigValidate(t *testing.T) {
 			wantErrSubstrings: []string{"source \"superpowers\"", "skill \" \\t \"", "name"},
 		},
 		{
+			name: "skill name with surrounding whitespace",
+			mutate: func(c *Config) {
+				source := c.Sources["superpowers"]
+				source.Skills[" brainstorming "] = source.Skills["brainstorming"]
+				delete(source.Skills, "brainstorming")
+				c.Sources["superpowers"] = source
+			},
+			wantErrSubstrings: []string{"source \"superpowers\"", "skill \" brainstorming \"", "name", "whitespace"},
+		},
+		{
 			name: "missing skill path",
 			mutate: func(c *Config) {
 				c.Sources["superpowers"].Skills["brainstorming"] = Skill{}
@@ -190,6 +226,13 @@ func TestConfigValidate(t *testing.T) {
 				c.Sources["superpowers"].Skills["brainstorming"] = Skill{Path: " \t\n"}
 			},
 			wantErrSubstrings: []string{"source \"superpowers\"", "skill \"brainstorming\"", "path"},
+		},
+		{
+			name: "skill path with surrounding whitespace",
+			mutate: func(c *Config) {
+				c.Sources["superpowers"].Skills["brainstorming"] = Skill{Path: " skills/brainstorming "}
+			},
+			wantErrSubstrings: []string{"source \"superpowers\"", "skill \"brainstorming\"", "path \" skills/brainstorming \"", "whitespace"},
 		},
 		{
 			name: "duplicate skill name across sources",
@@ -205,7 +248,7 @@ func TestConfigValidate(t *testing.T) {
 			wantErrSubstrings: []string{"source \"superpowers\"", "source \"local-overrides\"", "skill \"brainstorming\"", "duplicates"},
 		},
 		{
-			name: "duplicate skill name across sources after trim",
+			name: "skill name with surrounding whitespace in additional source",
 			mutate: func(c *Config) {
 				c.Sources["local-overrides"] = Source{
 					Repo: "https://github.com/example/local-skills.git",
@@ -215,10 +258,10 @@ func TestConfigValidate(t *testing.T) {
 					},
 				}
 			},
-			wantErrSubstrings: []string{"source \"superpowers\"", "source \"local-overrides\"", "skill", "duplicates"},
+			wantErrSubstrings: []string{"source \"local-overrides\"", "skill \" brainstorming \"", "name", "whitespace"},
 		},
 		{
-			name: "profile references source skill after trim",
+			name: "profile no longer references source skill after trimming source key",
 			mutate: func(c *Config) {
 				source := c.Sources["superpowers"]
 				source.Skills = map[string]Skill{
@@ -226,14 +269,16 @@ func TestConfigValidate(t *testing.T) {
 				}
 				c.Sources["superpowers"] = source
 			},
+			wantErrSubstrings: []string{"source \"superpowers\"", "skill \" brainstorming \"", "name", "whitespace"},
 		},
 		{
-			name: "profile references skill after trimming profile entry",
+			name: "profile skill entry with surrounding whitespace",
 			mutate: func(c *Config) {
 				profile := c.Profiles["trae-workspace"]
 				profile.Skills = []string{" brainstorming "}
 				c.Profiles["trae-workspace"] = profile
 			},
+			wantErrSubstrings: []string{"profile \"trae-workspace\"", "skill \" brainstorming \"", "name", "whitespace"},
 		},
 		{
 			name: "blank profile name",
@@ -242,6 +287,14 @@ func TestConfigValidate(t *testing.T) {
 				delete(c.Profiles, "trae-workspace")
 			},
 			wantErrSubstrings: []string{"profile \" \\t \"", "name"},
+		},
+		{
+			name: "profile name with surrounding whitespace",
+			mutate: func(c *Config) {
+				c.Profiles[" trae-workspace "] = c.Profiles["trae-workspace"]
+				delete(c.Profiles, "trae-workspace")
+			},
+			wantErrSubstrings: []string{"profile \" trae-workspace \"", "name", "whitespace"},
 		},
 		{
 			name: "missing profile target",
@@ -260,6 +313,15 @@ func TestConfigValidate(t *testing.T) {
 				c.Profiles["trae-workspace"] = profile
 			},
 			wantErrSubstrings: []string{"profile \"trae-workspace\"", "target"},
+		},
+		{
+			name: "profile target with surrounding whitespace",
+			mutate: func(c *Config) {
+				profile := c.Profiles["trae-workspace"]
+				profile.Target = " /cloudide/workspace/.trae/skills "
+				c.Profiles["trae-workspace"] = profile
+			},
+			wantErrSubstrings: []string{"profile \"trae-workspace\"", "target \" /cloudide/workspace/.trae/skills \"", "whitespace"},
 		},
 		{
 			name: "missing profile skills",
@@ -298,13 +360,13 @@ func TestConfigValidate(t *testing.T) {
 			wantErrSubstrings: []string{"profile \"trae-workspace\"", "skill \"brainstorming\"", "duplicated"},
 		},
 		{
-			name: "duplicate skill in one profile after trim",
+			name: "profile duplicate check rejects surrounding whitespace before trimming",
 			mutate: func(c *Config) {
 				profile := c.Profiles["trae-workspace"]
 				profile.Skills = []string{"brainstorming", " brainstorming "}
 				c.Profiles["trae-workspace"] = profile
 			},
-			wantErrSubstrings: []string{"profile \"trae-workspace\"", "skill \" brainstorming \"", "duplicated"},
+			wantErrSubstrings: []string{"profile \"trae-workspace\"", "skill \" brainstorming \"", "name", "whitespace"},
 		},
 	}
 

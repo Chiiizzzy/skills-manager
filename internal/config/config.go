@@ -65,60 +65,90 @@ func (c *Config) Validate() error {
 
 	skillSources := make(map[string]string)
 	for name, source := range c.Sources {
-		if strings.TrimSpace(name) == "" {
+		if isBlank(name) {
 			return fmt.Errorf("source %q name must not be empty", name)
 		}
-		if strings.TrimSpace(source.Repo) == "" {
-			return fmt.Errorf("source %q repo must not be empty", name)
+		if hasSurroundingWhitespace(name) {
+			return fmt.Errorf("source %q name must not have leading or trailing whitespace", name)
 		}
-		if strings.TrimSpace(source.Ref) == "" {
-			return fmt.Errorf("source %q ref must not be empty", name)
+		if isBlank(source.Repo) {
+			return fmt.Errorf("source %q repo %q must not be empty", name, source.Repo)
+		}
+		if hasSurroundingWhitespace(source.Repo) {
+			return fmt.Errorf("source %q repo %q must not have leading or trailing whitespace", name, source.Repo)
+		}
+		if isBlank(source.Ref) {
+			return fmt.Errorf("source %q ref %q must not be empty", name, source.Ref)
+		}
+		if hasSurroundingWhitespace(source.Ref) {
+			return fmt.Errorf("source %q ref %q must not have leading or trailing whitespace", name, source.Ref)
 		}
 		if len(source.Skills) == 0 {
 			return fmt.Errorf("source %q skills must not be empty", name)
 		}
 
 		for skillName, skill := range source.Skills {
-			trimmedSkillName := strings.TrimSpace(skillName)
-			if trimmedSkillName == "" {
+			if isBlank(skillName) {
 				return fmt.Errorf("source %q skill %q name must not be empty", name, skillName)
 			}
-			if strings.TrimSpace(skill.Path) == "" {
-				return fmt.Errorf("source %q skill %q path must not be empty", name, skillName)
+			if hasSurroundingWhitespace(skillName) {
+				return fmt.Errorf("source %q skill %q name must not have leading or trailing whitespace", name, skillName)
 			}
-			if existingSource, ok := skillSources[trimmedSkillName]; ok {
+			if isBlank(skill.Path) {
+				return fmt.Errorf("source %q skill %q path %q must not be empty", name, skillName, skill.Path)
+			}
+			if hasSurroundingWhitespace(skill.Path) {
+				return fmt.Errorf("source %q skill %q path %q must not have leading or trailing whitespace", name, skillName, skill.Path)
+			}
+			if existingSource, ok := skillSources[skillName]; ok {
 				return fmt.Errorf("source %q skill %q duplicates skill from source %q", name, skillName, existingSource)
 			}
-			skillSources[trimmedSkillName] = name
+			skillSources[skillName] = name
 		}
 	}
 
 	for name, profile := range c.Profiles {
-		if strings.TrimSpace(name) == "" {
+		if isBlank(name) {
 			return fmt.Errorf("profile %q name must not be empty", name)
 		}
-		if strings.TrimSpace(profile.Target) == "" {
-			return fmt.Errorf("profile %q target must not be empty", name)
+		if hasSurroundingWhitespace(name) {
+			return fmt.Errorf("profile %q name must not have leading or trailing whitespace", name)
+		}
+		if isBlank(profile.Target) {
+			return fmt.Errorf("profile %q target %q must not be empty", name, profile.Target)
+		}
+		if hasSurroundingWhitespace(profile.Target) {
+			return fmt.Errorf("profile %q target %q must not have leading or trailing whitespace", name, profile.Target)
 		}
 		if len(profile.Skills) == 0 {
 			return fmt.Errorf("profile %q skills must not be empty", name)
 		}
 		profileSkills := make(map[string]struct{})
 		for _, skillName := range profile.Skills {
-			trimmedSkillName := strings.TrimSpace(skillName)
-			if trimmedSkillName == "" {
+			if isBlank(skillName) {
 				return fmt.Errorf("profile %q skill %q name must not be empty", name, skillName)
 			}
-			if _, ok := profileSkills[trimmedSkillName]; ok {
+			if hasSurroundingWhitespace(skillName) {
+				return fmt.Errorf("profile %q skill %q name must not have leading or trailing whitespace", name, skillName)
+			}
+			if _, ok := profileSkills[skillName]; ok {
 				return fmt.Errorf("profile %q skill %q must not be duplicated", name, skillName)
 			}
-			profileSkills[trimmedSkillName] = struct{}{}
+			profileSkills[skillName] = struct{}{}
 
-			if _, ok := skillSources[trimmedSkillName]; !ok {
+			if _, ok := skillSources[skillName]; !ok {
 				return fmt.Errorf("profile %q references unknown skill %q", name, skillName)
 			}
 		}
 	}
 
 	return nil
+}
+
+func isBlank(value string) bool {
+	return strings.TrimSpace(value) == ""
+}
+
+func hasSurroundingWhitespace(value string) bool {
+	return strings.TrimSpace(value) != value
 }
