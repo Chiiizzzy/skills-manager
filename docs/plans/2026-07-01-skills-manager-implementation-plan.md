@@ -56,7 +56,6 @@ Run:
 ```bash
 go mod init github.com/your-org/skills-manager
 go get github.com/spf13/cobra@latest
-go get gopkg.in/yaml.v3@latest
 ```
 
 Expected:
@@ -152,6 +151,12 @@ Expected: help output contains `status`, `update`, `diff`, `patch`, `doctor`, `s
 - Modify: `examples/skillctl.yaml.example`
 
 - [ ] **Step 1: 实现配置结构**
+
+Add the YAML dependency before writing the config package:
+
+```bash
+go get gopkg.in/yaml.v3@latest
+```
 
 Create `internal/config/config.go`:
 
