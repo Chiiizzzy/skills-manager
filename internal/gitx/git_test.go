@@ -106,11 +106,21 @@ func TestRemoteBranchRef(t *testing.T) {
 			wantRemote: "refs/remotes/origin/main",
 			wantOK:     true,
 		},
+		{
+			name:       "feature branch with slash",
+			ref:        "feature/foo",
+			wantBranch: "feature/foo",
+			wantRemote: "refs/remotes/origin/feature/foo",
+			wantOK:     true,
+		},
 		{name: "tag ref", ref: "refs/tags/v1.0.0"},
+		{name: "bare v version tag", ref: "v1.0.0"},
+		{name: "bare version tag", ref: "1.0.0"},
 		{name: "sha", ref: sha},
 		{name: "tilde expression", ref: "main~1"},
 		{name: "caret expression", ref: "main^"},
 		{name: "colon expression", ref: "feature:foo"},
+		{name: "whitespace", ref: "feature foo"},
 		{name: "empty"},
 	}
 

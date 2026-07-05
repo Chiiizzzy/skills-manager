@@ -7,11 +7,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"unicode"
 )
 
 type Runner struct{}
+
+var bareVersionTagRefRE = regexp.MustCompile(`^v?[0-9]+[.][0-9]+[.][0-9]+([-+][0-9A-Za-z][0-9A-Za-z.-]*)?$`)
 
 func (Runner) Run(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
@@ -67,7 +70,7 @@ func (r Runner) fetch(ctx context.Context, dir, ref string) error {
 }
 
 func remoteBranchRef(ref string) (branch string, remoteRef string, ok bool) {
-	if ref == "" || strings.HasPrefix(ref, "refs/tags/") || isHexSHA(ref) {
+	if ref == "" || strings.HasPrefix(ref, "refs/tags/") || isHexSHA(ref) || bareVersionTagRefRE.MatchString(ref) {
 		return "", "", false
 	}
 	if strings.ContainsAny(ref, "~^:") || strings.IndexFunc(ref, unicode.IsSpace) >= 0 {
