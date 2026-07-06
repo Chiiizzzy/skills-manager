@@ -20,6 +20,8 @@ skills-manager/
   skillctl.lock              # 锁定每个 skill 的 upstream commit
   examples/
     skillctl.yaml.example    # 配置样例
+  scripts/
+    install-skillctl.sh      # 一次性注册 skillctl 命令
   sources/                   # 上游快照，由 CLI 生成，不手工改
   patches/                   # 本地定制 patch，按 skill 管理
   dist/                      # 合并后的可安装产物，由 CLI 生成
@@ -32,7 +34,25 @@ skills-manager/
       2026-07-01-skills-manager-implementation-plan.md
 ```
 
+## Install Command
+
+第一次使用时执行一次安装脚本，将 `skillctl` 注册为 shell 命令：
+
+```bash
+scripts/install-skillctl.sh
+```
+
+脚本会构建 `bin/skillctl`，并默认创建 `~/.local/bin/skillctl` 链接。之后在任意 shell 中可直接使用 `skillctl`；如果脚本提示 `~/.local/bin` 不在 `PATH` 中，按提示把它加入 shell profile。
+
+如需安装到其他已在 `PATH` 中的目录：
+
+```bash
+SKILLCTL_BIN_DIR=/usr/local/bin scripts/install-skillctl.sh
+```
+
 ## Build
+
+开发调试时也可以只构建本地二进制：
 
 ```bash
 go build -o bin/skillctl ./cmd/skillctl
@@ -42,7 +62,7 @@ go build -o bin/skillctl ./cmd/skillctl
 
 ```bash
 go test ./...
-bin/skillctl --root . status
+skillctl --root . status
 ```
 
 如果当前仓库根目录还没有 `skillctl.yaml`，`status` 会报告配置文件缺失。可以先复制并编辑 `examples/skillctl.yaml.example`。
