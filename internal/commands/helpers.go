@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -199,33 +200,77 @@ func updateSkill(ctx context.Context, layout workspace.Layout, git gitx.Runner, 
 			}
 			return "", err
 		}
-		if err := os.RemoveAll(filepath.Join(tmp, ".git")); err != nil {
-			return "", err
-		}
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return "", statErr
 	} else if err := checkoutSourcePath(ctx, git, sourceDir, commit, skill.Skill.Path, tmp); err != nil {
 		return "", err
 	}
 
-	distDir := layout.DistSkillDir(skill.Name)
-	if err := os.RemoveAll(distDir); err != nil {
-		return "", err
-	}
-	if err := syncer.CopyDir(tmp, distDir); err != nil {
+	if err := copyWorktreeToDist(tmp, layout.DistSkillDir(skill.Name)); err != nil {
 		return "", err
 	}
 	return commit, nil
 }
 
 func copyWorktreeToDist(worktreeDir, distDir string) error {
-	if err := os.RemoveAll(filepath.Join(worktreeDir, ".git")); err != nil {
-		return err
-	}
 	if err := os.RemoveAll(distDir); err != nil {
 		return err
 	}
-	return syncer.CopyDir(worktreeDir, distDir)
+	return filepath.WalkDir(worktreeDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(worktreeDir, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return os.MkdirAll(distDir, 0o755)
+		}
+		if isGitMetadataPath(rel) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		target := filepath.Join(distDir, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		return copyFilePreserveMode(path, target)
+	})
+}
+
+func isGitMetadataPath(rel string) bool {
+	return rel == ".git" || strings.HasPrefix(rel, ".git"+string(os.PathSeparator))
+}
+
+func copyFilePreserveMode(src, dst string) error {
+	info, statErr := os.Stat(src)
+	if statErr != nil {
+		return statErr
+	}
+	if mkdirErr := os.MkdirAll(filepath.Dir(dst), 0o755); mkdirErr != nil {
+		return mkdirErr
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	return os.Chmod(dst, info.Mode().Perm())
 }
 
 func checkoutSourcePath(ctx context.Context, git gitx.Runner, sourceDir, rev, upstreamPath, dst string) error {

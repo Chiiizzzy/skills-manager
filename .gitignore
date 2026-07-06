@@ -3,4 +3,6 @@
 /backups/
 /bin/
 /skillctl.lock.tmp
+.skillctl.lock
+.skillctl.yaml
 

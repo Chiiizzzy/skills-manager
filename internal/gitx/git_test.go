@@ -17,6 +17,46 @@ func TestGitAvailable(t *testing.T) {
 	}
 }
 
+func TestNormalizeRepoURLPrefersHTTPSForGitHub(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		repo string
+		want string
+	}{
+		{
+			name: "github scp style",
+			repo: "git@github.com:obra/superpowers.git",
+			want: "https://github.com/obra/superpowers.git",
+		},
+		{
+			name: "github ssh scheme",
+			repo: "ssh://git@github.com/obra/superpowers.git",
+			want: "https://github.com/obra/superpowers.git",
+		},
+		{
+			name: "github https unchanged",
+			repo: "https://github.com/obra/superpowers.git",
+			want: "https://github.com/obra/superpowers.git",
+		},
+		{
+			name: "local path unchanged",
+			repo: "/tmp/remote.git",
+			want: "/tmp/remote.git",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := normalizeRepoURL(tt.repo); got != tt.want {
+				t.Fatalf("normalizeRepoURL(%q) = %q, want %q", tt.repo, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCloneOrFetchRefreshesRemoteBranch(t *testing.T) {
 	requireGit(t)
 
@@ -47,7 +87,6 @@ func TestCloneOrFetchRefreshesRemoteBranch(t *testing.T) {
 	if resolvedFirst != firstCommit {
 		t.Fatalf("resolved first commit = %s, want %s", resolvedFirst, firstCommit)
 	}
-	runGit(t, runner, ctx, sourceDir, "branch", "-f", "main", firstCommit)
 
 	writeFile(t, filepath.Join(workDir, "README.md"), "second\n")
 	runGit(t, runner, ctx, workDir, "add", "README.md")
@@ -64,6 +103,66 @@ func TestCloneOrFetchRefreshesRemoteBranch(t *testing.T) {
 	}
 	if resolvedSecond == firstCommit {
 		t.Fatalf("resolved stale first commit after fetch: %s", resolvedSecond)
+	}
+}
+
+func TestCloneOrFetchUpdatesOriginURLToConfiguredRepo(t *testing.T) {
+	requireGit(t)
+
+	ctx := context.Background()
+	runner := Runner{}
+	tmp := t.TempDir()
+	sourceDir := filepath.Join(tmp, "sources", "repo")
+
+	remoteA, workA := initRemoteRepo(t, runner, ctx, filepath.Join(tmp, "remote-a"))
+	firstCommit := commitAndPushMain(t, runner, ctx, workA, "first\n", "first commit")
+
+	if err := runner.CloneOrFetch(ctx, remoteA, "main", sourceDir); err != nil {
+		t.Fatal(err)
+	}
+	if resolved := resolveGit(t, runner, ctx, sourceDir, "main"); resolved != firstCommit {
+		t.Fatalf("resolved first commit = %s, want %s", resolved, firstCommit)
+	}
+
+	writeFile(t, filepath.Join(workA, "README.md"), "second\n")
+	runGit(t, runner, ctx, workA, "add", "README.md")
+	runGit(t, runner, ctx, workA, "commit", "-m", "second commit")
+	runGit(t, runner, ctx, workA, "push", "origin", "main")
+	secondCommit := gitOutput(t, runner, ctx, workA, "rev-parse", "HEAD")
+
+	remoteB, workB := initRemoteRepo(t, runner, ctx, filepath.Join(tmp, "remote-b"))
+	_ = commitAndPushMain(t, runner, ctx, workB, "other\n", "other commit")
+
+	runGit(t, runner, ctx, sourceDir, "remote", "set-url", "origin", remoteB)
+
+	if err := runner.CloneOrFetch(ctx, remoteA, "main", sourceDir); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := gitOutput(t, runner, ctx, sourceDir, "remote", "get-url", "origin"); got != remoteA {
+		t.Fatalf("origin url = %s, want %s", got, remoteA)
+	}
+	if resolved := resolveGit(t, runner, ctx, sourceDir, "main"); resolved != secondCommit {
+		t.Fatalf("resolved updated commit = %s, want %s", resolved, secondCommit)
+	}
+}
+
+func TestEnsureOriginUpdatesRemoteURL(t *testing.T) {
+	requireGit(t)
+
+	ctx := context.Background()
+	runner := Runner{}
+	tmp := t.TempDir()
+	repoDir := filepath.Join(tmp, "repo")
+
+	runGit(t, runner, ctx, "", "init", repoDir)
+	runGit(t, runner, ctx, repoDir, "remote", "add", "origin", "/tmp/old.git")
+
+	if err := runner.ensureOrigin(ctx, repoDir, "/tmp/new.git"); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitOutput(t, runner, ctx, repoDir, "remote", "get-url", "origin"); got != "/tmp/new.git" {
+		t.Fatalf("origin url = %s, want %s", got, "/tmp/new.git")
 	}
 }
 
