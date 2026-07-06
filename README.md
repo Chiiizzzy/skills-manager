@@ -50,6 +50,13 @@ scripts/install-skillctl.sh
 SKILLCTL_BIN_DIR=/usr/local/bin scripts/install-skillctl.sh
 ```
 
+如果本机切换过 Go 版本，遇到 `does not match go tool version`，先确认 `which go`、`go env GOROOT`、`go env GOTOOLDIR` 来自同一套 Go 安装，并执行：
+
+```bash
+unset GOROOT
+go clean -cache
+```
+
 ## Build
 
 开发调试时也可以只构建本地二进制：

@@ -22,6 +22,62 @@ Examples:
 EOF
 }
 
+print_go_version_mismatch_help() {
+  local build_output="$1"
+
+  cat >&2 <<'EOF'
+error: Go toolchain version mismatch while building skillctl.
+
+This usually means PATH and GOROOT point to different Go installations,
+or Go's build cache still contains packages from another Go version.
+EOF
+
+  {
+    echo
+    echo "Go toolchain diagnostics:"
+    echo "  go binary: $(command -v go || echo unknown)"
+    echo "  go version: $("${go_env[@]}" go version 2>/dev/null || echo unknown)"
+    echo "  GOROOT: $("${go_env[@]}" go env GOROOT 2>/dev/null || echo unknown)"
+    echo "  GOTOOLDIR: $("${go_env[@]}" go env GOTOOLDIR 2>/dev/null || echo unknown)"
+    if [[ -n "${GOROOT:-}" ]]; then
+      echo "  ignored GOROOT env: $GOROOT"
+    fi
+  } >&2
+
+  cat >&2 <<'EOF'
+
+Suggested fixes:
+  unset GOROOT
+  go clean -cache
+  Ensure `which go`, `go env GOROOT`, and `go env GOTOOLDIR` belong to the same Go installation.
+
+Original go build output:
+EOF
+  printf '%s\n' "$build_output" >&2
+}
+
+go_build() {
+  local output status
+
+  set +e
+  output="$(cd "$repo_root" && "${go_env[@]}" go "$@" 2>&1)"
+  status=$?
+  set -e
+
+  if ((status != 0)); then
+    if grep -Eq 'does not match go tool version|compile: version "go[0-9][^"]*"' <<<"$output"; then
+      print_go_version_mismatch_help "$output"
+    else
+      printf '%s\n' "$output" >&2
+    fi
+    exit "$status"
+  fi
+
+  if [[ -n "$output" ]]; then
+    printf '%s\n' "$output"
+  fi
+}
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 
@@ -29,6 +85,7 @@ bin_dir="${SKILLCTL_BIN_DIR:-"$HOME/.local/bin"}"
 command_name="${SKILLCTL_NAME:-skillctl}"
 build=1
 force=0
+go_env=(env -u GOROOT)
 
 while (($#)); do
   case "$1" in
@@ -81,9 +138,12 @@ if ((build)); then
     echo "error: go is required to build skillctl" >&2
     exit 1
   fi
+  if [[ -n "${GOROOT:-}" ]]; then
+    echo "Warning: ignoring GOROOT=$GOROOT for this build." >&2
+  fi
 
   mkdir -p "$repo_root/bin"
-  (cd "$repo_root" && go build -o "$target" ./cmd/skillctl)
+  go_build build -o "$target" ./cmd/skillctl
 elif [[ ! -x "$target" ]]; then
   echo "error: $target does not exist or is not executable; rerun without --no-build" >&2
   exit 1
